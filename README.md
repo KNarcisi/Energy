@@ -1,4 +1,4 @@
-# Energy
+# Renewable Energy Development
 
 ## Introduction
 I'm a Data Product Manager at a renewable energy development company in NYC, passionate about leveraging coding and data analysis to drive insights and innovation in the energy sector and beyond. This repository showcases my coding skills in SQL, Python, and R, with a focus on geospatial analysis and data engineering.
