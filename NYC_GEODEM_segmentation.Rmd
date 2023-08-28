@@ -1,0 +1,183 @@
+---
+title: "NYC_GEOsegmenation"
+output: html_document
+date: "2023-08-28"
+---
+
+# Exploratory Data Analysis and Clustering Analysis of New York City Census Tracts
+
+This Markdown document presents an exploratory data analysis (EDA) and clustering analysis conducted on demographic and geographic data of New York City (NYC) census tracts. The analysis utilizes the R programming language and several libraries to visualize and understand patterns.
+
+## Overview
+
+In this analysis, we explore demographic and population density data for selected NYC census tracts using the `tidycensus`, `tigris`, `tidyverse`, `sf`, and other R packages. Census tracts serve as the building blocks of our analysis, providing a finer level of geographic granularity than zip codes and enabling us to uncover insights about different neighborhoods based on features such as median household income, median age, and population density.
+
+## Methodology
+
+1.  **Installation and Loading of Libraries:** We begin by installing and loading necessary R libraries, such as `tidycensus` for fetching census data, `sf` for spatial data handling, and visualization libraries like `ggplot2` and `mapview`.
+
+2.  **Data Preparation:** Demographic data including median income, median age, and total population is fetched from the US Census Bureau using the `tidycensus` package. We calculate population density and perform data cleaning to prepare it for analysis.
+
+3.  **K-Means Clustering:** To identify natural clusters within the data, we use the K-means clustering algorithm. The elbow method is employed to determine the optimal number of clusters that best captures the underlying patterns in the dataset.
+
+4.  **Data Visualization:** The clustered data is converted to a geographic format using `sf` and visualized using various packages like `ggplot2`. We create an interactive map to visualize the distribution of clusters across NYC census tracts. Additionally, a scatter plot is generated to explore relationships between key demographic variables within each cluster.
+
+5.  **Exporting GeoJSON:** We save the clustered data in a GeoJSON file format using the `sf` package, enabling further spatial analysis and data integration.
+
+## Insights and Applications
+
+This analysis offers valuable insights into NYC census tracts demographics and neighborhood patterns. It leverages census tracts, which provide a more nuanced view of geographic divisions than zip codes. The insights gained from this analysis can be utilized for various purposes:
+
+-   Real estate investment decisions can be informed by identifying neighborhoods with similar characteristics.
+-   Businesses can target specific demographic clusters for site selection and marketing strategies.
+-   Urban planners can gain insights into neighborhood change and social integration trends.
+-   Social services agencies can strategically allocate resources based on identified clusters.
+
+By employing census tracts as our geographic units of analysis, we can better capture the diversity and nuances of NYC neighborhoods, contributing to informed decision-making.
+
+**Note:** The full R code for this analysis can be found within this Markdown document. It covers data acquisition, preparation, clustering, and visualization.
+
+## Installation and Loading of Libraries
+
+```{r}
+
+install.packages(c("tidycensus", "tigris", "tidyverse", "mapview", "ggiraph", "patchwork","ggplot2"))
+install.packages("sf", type = "binary")
+library(tidycensus)
+library(tigris)
+library(tidyverse)
+library(sf)
+library(mapview)
+library(ggiraph)
+library(patchwork)
+library(ggplot2)
+
+```
+
+## Data Preparation
+
+```{r}
+# Set options and seed
+options(tigris_use_cache = TRUE)
+set.seed(123456)
+
+# Fetch NYC data
+nyc_counties <- c("005", "047", "061", "081", "085")
+
+nyc_inputs <- get_acs(
+  geography = "tract",
+  variables = c(median_income = "B19013_001",
+                median_age = "B01002_001",
+                total_population = "B01003_001"),
+  state = "NY",
+  county = nyc_counties,
+  output = "wide",
+  geometry = TRUE,
+  keep_geo_vars = TRUE
+) %>%
+  mutate(pop_density = total_populationE / (ALAND / 2589988.11 )) %>%
+  na.omit()
+
+```
+
+## Elbow Method for Determining Cluster Amount
+
+```{r}
+# Elbow method to find optimal number of clusters
+wcss <- numeric(length = 10)
+for (num_clusters in 1:10) {
+  nyc_kmeans <- nyc_inputs %>%
+    st_drop_geometry() %>%
+    select(median_incomeE, median_ageE, pop_density) %>%
+    scale() %>%
+    kmeans(centers = num_clusters)
+  
+  # Calculate the within-cluster sum of squares
+  wcss[num_clusters] <- nyc_kmeans$tot.withinss
+}
+
+# Plot the elbow curve
+plot(1:10, wcss, type = "b", pch = 19, frame = FALSE,
+     xlab = "Number of Clusters", ylab = "Total Within-Cluster Sum of Squares")
+
+```
+
+## K-Means Clustering
+
+```{r}
+
+# Choose the number of clusters based on the elbow plot
+num_clusters_chosen <- 4
+nyc_kmeans <- nyc_inputs %>%
+  st_drop_geometry() %>%
+  select(median_incomeE, median_ageE, pop_density) %>%
+  scale() %>%
+  kmeans(centers = num_clusters_chosen)
+
+```
+
+### Data Visualization
+
+Once we have performed K-means clustering on the dataset, we can visualize the results to gain insights into the distribution of clusters across NYC census tracts.
+
+#### Clustered Map
+
+The following code generates an interactive map that visualizes the clusters using different colors:
+
+```{r}
+
+# Create a clustered map
+nyc_clusters <- nyc_inputs %>%
+  mutate(cluster = as.character(nyc_kmeans$cluster))
+
+nyc_map <- ggplot(nyc_clusters, aes(fill = cluster, data_id = GEOID)) + 
+  geom_sf_interactive(size = 0.1) + 
+  scale_fill_brewer(palette = "Set1") + 
+  theme_void() + 
+  labs(fill = "Cluster ")
+
+# Display the clustered map
+nyc_map
+```
+
+### Scatter Plot
+
+Additionally, we can create a scatter plot to understand the relationships between median household income and population density for each cluster:
+
+```{r}
+# Create a scatter plot
+nyc_plot <- ggplot(nyc_clusters, 
+                   aes(x = median_incomeE, y = pop_density, color = cluster, data_id = GEOID)) + 
+  geom_point_interactive() + 
+  scale_color_brewer(palette = "Set1") + 
+  scale_y_log10() + 
+  scale_x_continuous(labels = scales::dollar_format()) + 
+  theme_minimal(base_size = 12) + 
+  labs(color = "Cluster",
+       x = "Median household income",
+       y = "Population density (logged)")
+
+# Display the scatter plot
+nyc_plot
+
+```
+
+## Exporting GeoJSON
+
+We can also export the clustered data to a GeoJSON file, which allows for further spatial analysis:
+
+```{r}
+# Convert the data to a simple feature (sf) object
+nyc_sf <- st_as_sf(nyc_clusters)
+
+# Define the file path where you want to save the GeoJSON on your desktop
+output_geojson <- "YOUR_FILE_PATH_HERE.geojson"
+
+# Add cluster as an attribute to the sf object
+nyc_sf$cluster <- nyc_clusters$cluster
+
+# Write the sf object to a GeoJSON file, including the cluster attribute
+st_write(nyc_sf, output_geojson)
+
+
+```
